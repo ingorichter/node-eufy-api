@@ -65,17 +65,13 @@ const deviceMenu = async (device: Device): Promise<void> => {
 	}
 
 	if (device.supportsTemperature()) {
-		const temperatureOption: objects.ChoiceOption<unknown> = {
+        const temperatureOption: objects.ChoiceOption<unknown> = {
 			name: 'Change temperature',
 			value: 'temperature'
 		};
-		if (device.isPowerOn()) {
-			temperatureOption.name += ` (currently ${device.getTemperature()}/100)`;
-		} else {
-			temperatureOption.disabled = 'Turn on first';
-		}
-		menuOptions.push(temperatureOption);
-	}
+        device.isPowerOn() ? temperatureOption.name += ` (currently ${device.getTemperature()}/100)` : temperatureOption.disabled = 'Turn on first';
+        menuOptions.push(temperatureOption);
+    }
 
 	if (device.supportsColors()) {
 		menuOptions.push({
@@ -90,7 +86,7 @@ const deviceMenu = async (device: Device): Promise<void> => {
 		value: 'exit'
 	});
 
-	const { action } = await prompt([{
+	const { action } = await prompt<{	action: String }>([{
 		type: 'list',
 		name: 'action',
 		message: 'Options',

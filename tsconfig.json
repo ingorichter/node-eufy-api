@@ -6,7 +6,8 @@
 		"declaration": true,
 		"strictNullChecks": true,
 		"noImplicitAny": true,
-		"noImplicitReturns": true
+		"noImplicitReturns": true,
+		"esModuleInterop": true
 	},
 	"files": [
 		"src/index.ts",
