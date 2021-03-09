@@ -351,7 +351,12 @@ export class LightBulb extends AbstractDevice {
 			throw new Error(`Unknown bulb state - call loadCurrentState()`);
 		}
 
-		return rgb2hsl(this.state.colors!.red, this.state.colors!.green, this.state.colors!.blue);
+		// colors is optional and we need to ensure that we pass along valid values
+		const red = this.state.colors?.red || 0;
+		const green = this.state.colors?.green || 0;
+		const blue = this.state.colors?.blue || 0;
+
+		return rgb2hsl(red, green, blue);
 	}
 
 	async setHslColors(hue: number, saturation: number, lightness: number): Promise<HslColors> {

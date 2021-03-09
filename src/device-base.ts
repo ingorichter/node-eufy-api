@@ -4,6 +4,7 @@ import { TcpSocket } from './tcp-socket';
 import { decryptResponse, encryptPacket } from './encryption';
 import * as log from './log';
 import { RgbColors, HslColors } from './colors';
+import Queue from "promise-queue";
 
 export enum Model {
 	// plug
@@ -105,6 +106,8 @@ export abstract class AbstractDevice implements Device {
 	private onConnectionEventHandler: Array<(connected: boolean) => void>;
 
 	protected power?: boolean;
+
+	private queue = new Queue(1, Infinity);
 
 	constructor(model: Model, code: string, ipAddress: string, name?: string) {
 		log.verbose('AbstractDevice.new', `Create device (model: ${model}, code: ${code})`);
@@ -299,37 +302,39 @@ export abstract class AbstractDevice implements Device {
 	}
 
 	protected async getSequence(): Promise<number> {
-		log.verbose('AbstractDevice.getSequence', 'Loading current sequence number');
+		return this.queue.add(async () => {
+			log.verbose('AbstractDevice.getSequence', 'Loading current sequence number');
 
-		const proto = await protobuf.load(`${__dirname}/lakeside.proto`);
+			const proto = await protobuf.load(`${__dirname}/lakeside.proto`);
 
-		const packetType = proto.lookupType('lakeside.T1012Packet');
-		const packet = packetType.encode({
-			sequence: Math.round(Math.random() * 3000000),
-			code: this.code,
-			ping: {
-				type: 0
+			const packetType = proto.lookupType('lakeside.T1012Packet');
+			const packet = packetType.encode({
+				sequence: Math.round(Math.random() * 3000000),
+				code: this.code,
+				ping: {
+					type: 0
+				}
+			}).finish();
+
+			const response = await this.sendPacketWithResponse(packet);
+			let rawSequence = response.sequence;
+			let currentSequence;
+			if (typeof rawSequence === 'string') {
+				currentSequence = parseInt(rawSequence, 10);
+			} else if (typeof rawSequence === 'number') {
+				currentSequence = rawSequence;
+			} else {
+				log.error('Unknown sequence number type');
+				currentSequence = rawSequence as number;
 			}
-		}).finish();
 
-		const response = await this.sendPacketWithResponse(packet);
-		let rawSequence = response.sequence;
-		let currentSequence;
-		if (typeof rawSequence === 'string') {
-			currentSequence = parseInt(rawSequence, 10);
-		} else if (typeof rawSequence === 'number') {
-			currentSequence = rawSequence;
-		} else {
-			log.error('Unknown sequence number type');
-			currentSequence = rawSequence as number;
-		}
+			log.verbose('AbstractDevice.getSequence', 'Current sequence number:', currentSequence);
 
-		log.verbose('AbstractDevice.getSequence', 'Current sequence number:', currentSequence);
+			if (currentSequence > 0x80000000) {
+				log.warn('WARNING: There is a bug with Eufy devices that might mean that your device will disconnect! For further information, go: https://github.com/sebmos/node-eufy-api/issues');
+			}
 
-		if (currentSequence > 0x80000000) {
-			log.warn('WARNING: There is a bug with Eufy devices that might mean that your device will disconnect! For further information, go: https://github.com/sebmos/node-eufy-api/issues');
-		}
-
-		return currentSequence + 1;
+			return currentSequence + 1;
+		});
 	}
 }

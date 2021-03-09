@@ -1,5 +1,6 @@
 import { Socket, createConnection, isIP } from 'net';
 import * as log from './log';
+import Queue from "promise-queue";
 
 export class TcpSocket {
 	private ipAddress: string;
@@ -7,7 +8,11 @@ export class TcpSocket {
 	private socket?: Socket;
 	private nextMessage?: Buffer;
 	connected: boolean;
+	private interval: NodeJS.Timeout;
 	private connectionChangedHandler: (connected: boolean) => void;
+
+	// serialize socket requests
+	private queue = new Queue(1, Infinity);
 
 	constructor(ipAddress: string, port: number, connectionChangedHandler: (connected: boolean) => void) {
 		this.ipAddress = ipAddress;
@@ -15,7 +20,6 @@ export class TcpSocket {
 		this.connected = false;
 		this.connectionChangedHandler = connected => {
 			this.connected = connected;
-
 			connectionChangedHandler(connected);
 		};
 	}
@@ -72,7 +76,7 @@ export class TcpSocket {
 	}
 
 	async disconnect(): Promise<void> {
-		await new Promise(resolve => {
+		await new Promise<void>(resolve => {
 			if (this.connected && this.socket) {
 				this.socket.end(resolve);
 			} else {
@@ -92,30 +96,34 @@ export class TcpSocket {
 	}
 
 	async sendWaitForResponse(message: Buffer): Promise<Buffer> {
-		this.nextMessage = undefined;
+		return this.queue.add(async () => {
+			await this.send(message);
 
-		await this.send(message);
+			return new Promise(async (resolve, reject) => {
+				this.nextMessage = undefined;
 
-		return new Promise((resolve, reject) => {
-			const timeout = 10000;
-			const intervalTime = 10;
+				const timeout = 10000;
+				const intervalTime = 10;
 
-			let attempts = 0;
-			const interval = setInterval(() => {
-				if (this.nextMessage) {
-					clearInterval(interval);
+				let attempts = 0;
+				let interval = setInterval(() => {
+					if (this.interval != null) clearTimeout(this.interval);
 
-					resolve(this.nextMessage);
-				} else if (!this.connected) {
-					clearInterval(interval);
+					if (this.nextMessage) {
+						clearInterval(interval);
 
-					reject(new Error('Socket closed without sending response'));
-				} else if (attempts++ > timeout / intervalTime) {
-					clearInterval(interval);
+						resolve(this.nextMessage);
+					} else if (!this.connected) {
+						clearInterval(interval);
 
-					reject(new Error('Response timeout exceeded'));
-				}
-			}, 10);
+						reject(new Error('Socket closed without sending response'));
+					} else if (attempts++ > timeout / intervalTime) {
+						clearInterval(interval);
+
+						reject(new Error('Response timeout exceeded'));
+					}
+				}, 10);
+			});
 		});
 	}
 }
